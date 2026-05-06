@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hanami Memory Quest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%);
+            overflow: hidden;
+            touch-action: manipulation; /* Mencegah zoom saat double tap di HP */
+        }
+
+        /* Animasi Kelopak Sakura Jatuh */
+        .petal {
+            position: absolute;
+            background-color: #FFB7C5;
+            border-radius: 15px 0 15px 0;
+            opacity: 0.7;
+            pointer-events: none;
+            animation: fall linear infinite;
+            z-index: 0;
+        }
+
+        @keyframes fall {
+            0% { transform: translateY(-10vh) rotate(0deg) scale(0.5); opacity: 0; }
+            10% { opacity: 0.8; }
+            90% { opacity: 0.8; }
+            100% { transform: translateY(110vh) rotate(360deg) scale(1); opacity: 0; }
+        }
+
+        /* Utility Animasi */
+        .bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes bounceIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .shake { animation: shake 0.4s ease-in-out; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        .pulse-glow { animation: pulseGlow 1s infinite alternate; }
+        @keyframes pulseGlow {
+            0% { box-shadow: 0 0 10px rgba(255, 183, 197, 0.5); transform: scale(1); }
+            100% { box-shadow: 0 0 30px rgba(255, 183, 197, 0.9); transform: scale(1.05); }
+        }
+
+        /* UI Elements */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border: 4px solid white;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .btn-game {
+            transition: all 0.2s;
+        }
+        .btn-game:active {
+            transform: scale(0.95);
+        }
+
+        /* Game 1: Memory Cards */
+        .memory-card {
+            perspective: 1000px;
+            cursor: pointer;
+        }
+        .memory-card-inner {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            position: relative;
+        }
+        .memory-card.flipped .memory-card-inner {
+            transform: rotateY(180deg);
+        }
+        .memory-card-front, .memory-card-back {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .memory-card-front {
+            background-color: #FFB7C5; /* Warna Kelopak */
+            font-size: 3rem;
+            color: white;
+        }
+        .memory-card-back {
+            background-color: white;
+            transform: rotateY(180deg);
+            font-size: 4rem;
+        }
+
+        /* Layar Utama */
+        #app-content { z-index: 10; position: relative; }
+        .screen { display: none; }
+        .screen.active { display: flex; flex-direction: column; }
+    </style>
+</head>
+<body class="w-screen h-screen flex justify-center items-center">
+
+    <!-- Efek Latar Sakura -->
+    <div id="sakura-container" class="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none"></div>
+
+    <!-- Kontainer Utama -->
+    <div id="app-content" class="w-full max-w-3xl h-full md:h-[90vh] glass-panel md:rounded-[3rem] p-6 flex flex-col relative">
+        
+        <!-- Header Global (Tombol Home & Level) -->
+        <div id="global-header" class="hidden justify-between items-center mb-4">
+            <div class="flex gap-2">
+                <button onclick="app.showMenu()" class="bg-white text-pink-500 rounded-full w-12 h-12 md:w-14 md:h-14 text-2xl md:text-3xl shadow-md btn-game flex justify-center items-center" title="Kembali ke Menu">🏠</button>
+                <button onclick="saveGame()" class="bg-white text-blue-500 rounded-full w-12 h-12 md:w-14 md:h-14 text-2xl md:text-3xl shadow-md btn-game flex justify-center items-center" title="Simpan Progres">💾</button>
+                <button onclick="AudioSys.toggleMute()" id="btn-mute" class="bg-white text-gray-500 rounded-full w-12 h-12 md:w-14 md:h-14 text-2xl md:text-3xl shadow-md btn-game flex justify-center items-center" title="Matikan/Nyalakan Suara">🔊</button>
+            </div>
+            <div id="level-display" class="bg-pink-100 text-pink-700 font-bold px-4 py-2 md:px-6 md:py-2 rounded-full text-lg md:text-xl shadow-inner border-2 border-pink-200 text-center">Level 1</div>
+            <div id="score-display" class="bg-yellow-100 text-yellow-700 font-bold px-4 py-2 md:px-6 md:py-2 rounded-full text-lg md:text-xl shadow-inner border-2 border-yellow-200 text-center">🌟 0</div>
+        </div>
+
+        <!-- SCREEN: MENU UTAMA -->
+        <div id="menu-screen" class="screen active h-full items-center justify-center space-y-8">
+            <div class="text-center bounce-in">
+                <h1 class="text-4xl md:text-5xl font-extrabold text-pink-500 mb-2 drop-shadow-md">🌸 Taman Sakura 🌸</h1>
+                <p class="text-gray-600 text-lg md:text-xl font-semibold mb-4">Pilih wahana bermainmu!</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full px-4">
+                <!-- Menu Card 1 -->
+                <button onclick="app.startGame('memory')" class="bg-white rounded-3xl p-6 shadow-lg border-4 border-pink-200 hover:border-pink-400 btn-game flex flex-col items-center gap-2 group h-full">
+                    <div class="text-6xl group-hover:scale-110 transition-transform mb-2">🃏</div>
+                    <h2 class="text-xl font-bold text-gray-700">Tebak Kelopak</h2>
+                    <p class="text-sm text-gray-500 mb-2">Cari pasangan hewan lucu</p>
+                    <div class="mt-auto w-full pt-3 border-t-2 border-pink-50 text-center">
+                        <span class="text-sm font-bold text-yellow-500 bg-yellow-50 px-4 py-1 rounded-full">🏆 Terbaik: <span id="hs-memory">0</span></span>
+                    </div>
+                </button>
+                <!-- Menu Card 2 -->
+                <button onclick="app.startGame('simon')" class="bg-white rounded-3xl p-6 shadow-lg border-4 border-yellow-200 hover:border-yellow-400 btn-game flex flex-col items-center gap-2 group h-full">
+                    <div class="text-6xl group-hover:scale-110 transition-transform mb-2">🏮</div>
+                    <h2 class="text-xl font-bold text-gray-700">Nyanyian Pohon</h2>
+                    <p class="text-sm text-gray-500 mb-2">Ikuti urutan nada lampion</p>
+                    <div class="mt-auto w-full pt-3 border-t-2 border-yellow-50 text-center">
+                        <span class="text-sm font-bold text-yellow-500 bg-yellow-50 px-4 py-1 rounded-full">🏆 Terbaik: <span id="hs-simon">0</span></span>
+                    </div>
+                </button>
+                <!-- Menu Card 3 -->
+                <button onclick="app.startGame('hide')" class="bg-white rounded-3xl p-6 shadow-lg border-4 border-mint-200 hover:border-green-400 btn-game flex flex-col items-center gap-2 group h-full">
+                    <div class="text-6xl group-hover:scale-110 transition-transform mb-2">🫣</div>
+                    <h2 class="text-xl font-bold text-gray-700">Siapa Hilang?</h2>
+                    <p class="text-sm text-gray-500 mb-2">Ingat siapa yang ikut piknik</p>
+                    <div class="mt-auto w-full pt-3 border-t-2 border-green-50 text-center">
+                        <span class="text-sm font-bold text-yellow-500 bg-yellow-50 px-4 py-1 rounded-full">🏆 Terbaik: <span id="hs-hide">0</span></span>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- SCREEN: GAME 1 (Memory Match) -->
+        <div id="memory-screen" class="screen flex-1 items-center justify-center w-full">
+            <div id="memory-grid" class="grid gap-3 w-full max-w-lg mx-auto h-[60vh] md:h-auto">
+                <!-- Kartu digenerate oleh JS -->
+            </div>
+        </div>
+
+        <!-- SCREEN: GAME 2 (Simon Says / Lampion) -->
+        <div id="simon-screen" class="screen flex-1 items-center justify-center w-full">
+            <div class="relative w-72 h-72 md:w-96 md:h-96">
+                <!-- Center Hub -->
+                <div id="simon-center" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-white rounded-full shadow-inner flex items-center justify-center text-3xl z-10 border-4 border-gray-100">🌸</div>
+                <!-- Lampion Buttons -->
+                <button id="simon-btn-0" onclick="simonGame.handleInput(0)" class="absolute top-0 left-1/2 transform -translate-x-1/2 w-28 h-28 md:w-36 md:h-36 rounded-full bg-[#FFB7C5] border-4 border-white shadow-lg btn-game opacity-90"></button>
+                <button id="simon-btn-1" onclick="simonGame.handleInput(1)" class="absolute top-1/2 right-0 transform -translate-y-1/2 w-28 h-28 md:w-36 md:h-36 rounded-full bg-[#FDFD96] border-4 border-white shadow-lg btn-game opacity-90"></button>
+                <button id="simon-btn-2" onclick="simonGame.handleInput(2)" class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-28 h-28 md:w-36 md:h-36 rounded-full bg-[#77DD77] border-4 border-white shadow-lg btn-game opacity-90"></button>
+                <button id="simon-btn-3" onclick="simonGame.handleInput(3)" class="absolute top-1/2 left-0 transform -translate-y-1/2 w-28 h-28 md:w-36 md:h-36 rounded-full bg-[#AEC6CF] border-4 border-white shadow-lg btn-game opacity-90"></button>
+            </div>
+        </div>
+
+        <!-- SCREEN: GAME 3 (Hide & Seek) -->
+        <div id="hide-screen" class="screen flex-1 flex-col items-center justify-between w-full pb-4">
+            <!-- Stage Area -->
+            <div class="w-full bg-green-100 rounded-3xl h-48 md:h-64 flex items-end justify-center pb-4 relative border-b-8 border-green-300 shadow-inner overflow-hidden">
+                <div id="hide-stage" class="flex gap-4 items-end">
+                    <!-- Hewan digenerate oleh JS -->
+                </div>
+                <!-- Tirai Angin Sakura -->
+                <div id="hide-curtain" class="absolute inset-0 bg-pink-300 flex items-center justify-center text-white text-3xl font-bold transition-opacity duration-700 opacity-0 pointer-events-none z-20">
+                    🌸 Angin Berhembus... 🌸
+                </div>
+            </div>
+
+            <div id="hide-instruction" class="text-xl font-bold text-gray-600 my-4 h-8">Ingat siapa saja yang ada di sini!</div>
+
+            <!-- Opsi Jawaban -->
+            <div id="hide-options" class="flex justify-center gap-4 w-full px-2 opacity-50 pointer-events-none transition-opacity">
+                <!-- Tombol digenerate JS -->
+            </div>
+        </div>
+
+        <!-- Overlay Feedback (Pesan Hebat!) -->
+        <div id="feedback-overlay" class="absolute inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm rounded-[3rem] hidden">
+            <div class="text-center bounce-in bg-white p-8 rounded-3xl shadow-2xl border-4 border-yellow-300">
+                <div class="text-6xl mb-4">🌟</div>
+                <h2 class="text-4xl font-extrabold text-pink-500 mb-4">Hebat!</h2>
+                <button onclick="app.nextLevel()" class="bg-green-400 hover:bg-green-500 text-white font-bold py-4 px-10 rounded-full text-2xl shadow-lg btn-game">Lanjut!</button>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-auto pt-4 text-center">
+            <p class="text-sm font-bold text-pink-400 tracking-wider">developed by : <span class="text-pink-600 bg-pink-100 px-3 py-1 rounded-full">@dillynugros</span></p>
+        </div>
+
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-white px-6 py-3 rounded-full shadow-xl border-2 border-pink-300 font-bold text-pink-600 transition-all duration-300 translate-y-24 opacity-0 z-[100] pointer-events-none whitespace-nowrap text-center">
+        Pesan
+    </div>
+
+    <!-- SCRIPT LOGIKA GAME -->
+    <script>
+        // --- SISTEM AUDIO (Web Audio API) ---
+        // Menghasilkan nada instrumen yang menenangkan
+        const AudioSys = {
+            ctx: null,
+            isMuted: false,
+            init: function() {
+                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            },
+            toggleMute: function() {
+                this.isMuted = !this.isMuted;
+                const btn = document.getElementById('btn-mute');
+                if (btn) btn.innerText = this.isMuted ? '🔇' : '🔊';
+                if (!this.isMuted) this.playTone(600, 'sine', 0.1);
+            },
+            playTone: function(freq, type = 'sine', duration = 0.5) {
+                if (this.isMuted) return;
+                if (!this.ctx) this.init();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                
+                // Amplop suara agar lembut (attack cepat, decay perlahan)
+                gain.gain.setValueAtTime(0, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.15, this.ctx.currentTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            },
+            playSuccess: function() {
+                this.playTone(523.25, 'triangle', 0.2); // C5
+                setTimeout(() => this.playTone(659.25, 'triangle', 0.2), 150); // E5
+                setTimeout(() => this.playTone(783.99, 'triangle', 0.4), 300); // G5
+            },
+            playError: function() {
+                this.playTone(300, 'square', 0.3);
+            }
+        };
+
+        // --- SISTEM PARTIKEL SAKURA Latar Belakang ---
+        function createPetals() {
+            const container = document.getElementById('sakura-container');
+            for(let i=0; i<15; i++) {
+                const petal = document.createElement('div');
+                petal.classList.add('petal');
+                petal.style.left = Math.random() * 100 + 'vw';
+                petal.style.width = (Math.random() * 10 + 10) + 'px';
+                petal.style.height = (Math.random() * 10 + 10) + 'px';
+                petal.style.animationDuration = (Math.random() * 5 + 5) + 's';
+                petal.style.animationDelay = Math.random() * 5 + 's';
+                container.appendChild(petal);
+            }
+        }
+        createPetals();
+
+
+        // --- MANAJER APLIKASI (STATE & NAVIGASI) ---
+        const app = {
+            currentGame: null,
+            level: 1,
+            score: 0,
+            highScores: {
+                memory: 0,
+                simon: 0,
+                hide: 0
+            },
+            
+            showScreen: function(screenId) {
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById(screenId).classList.add('active');
+                
+                // Atur Header Global
+                if(screenId === 'menu-screen') {
+                    document.getElementById('global-header').classList.add('hidden');
+                    document.getElementById('global-header').classList.remove('flex');
+                } else {
+                    document.getElementById('global-header').classList.remove('hidden');
+                    document.getElementById('global-header').classList.add('flex');
+                    this.updateLevelDisplay();
+                }
+            },
+            
+            showMenu: function() {
+                this.currentGame = null;
+                this.score = 0; // Reset skor saat kembali ke menu
+                this.updateScoreDisplay();
+                this.showScreen('menu-screen');
+                this.hideFeedback();
+                AudioSys.init(); // Init audio pada interaksi pertama
+            },
+            
+            startGame: function(gameType) {
+                this.level = 1;
+                this.score = 0;
+                this.currentGame = gameType;
+                this.hideFeedback();
+                this.updateScoreDisplay();
+                
+                if(gameType === 'memory') {
+                    this.showScreen('memory-screen');
+                    memoryGame.startLevel(this.level);
+                } else if(gameType === 'simon') {
+                    this.showScreen('simon-screen');
+                    simonGame.startLevel(this.level);
+                } else if(gameType === 'hide') {
+                    this.showScreen('hide-screen');
+                    hideGame.startLevel(this.level);
+                }
+            },
+            
+            updateLevelDisplay: function() {
+                document.getElementById('level-display').innerText = `Level ${this.level}`;
+            },
+
+            addScore: function(points) {
+                this.score += points;
+                
+                // Cek highscore khusus untuk game yang sedang dimainkan
+                const currentHS = this.highScores[this.currentGame] || 0;
+                if (this.score > currentHS) {
+                    this.highScores[this.currentGame] = this.score;
+                    document.getElementById(`hs-${this.currentGame}`).innerText = this.score;
+                }
+                
+                this.updateScoreDisplay();
+            },
+
+            updateScoreDisplay: function() {
+                const scoreEl = document.getElementById('score-display');
+                if (scoreEl) scoreEl.innerText = `🌟 ${this.score}`;
+            },
+
+            updateAllHighscoreDisplays: function() {
+                if(document.getElementById('hs-memory')) document.getElementById('hs-memory').innerText = this.highScores.memory;
+                if(document.getElementById('hs-simon')) document.getElementById('hs-simon').innerText = this.highScores.simon;
+                if(document.getElementById('hs-hide')) document.getElementById('hs-hide').innerText = this.highScores.hide;
+            },
+
+            levelComplete: function() {
+                AudioSys.playSuccess();
+                this.addScore(this.level * 10); // Tambah poin: Level * 10
+                document.getElementById('feedback-overlay').classList.remove('hidden');
+            },
+
+            nextLevel: function() {
+                this.level++;
+                this.hideFeedback();
+                this.updateLevelDisplay();
+                
+                if(this.currentGame === 'memory') memoryGame.startLevel(this.level);
+                else if(this.currentGame === 'simon') simonGame.startLevel(this.level);
+                else if(this.currentGame === 'hide') hideGame.startLevel(this.level);
+            },
+
+            hideFeedback: function() {
+                document.getElementById('feedback-overlay').classList.add('hidden');
+            }
+        };
+
+
+        // --- GAME 1: MEMORY MATCH ---
+        const memoryGame = {
+            emojis: ['🦊', '🐰', '🐻', '🐱', '🐶', '🐼', '🐯', '🐸'],
+            cards: [],
+            flippedIndices: [],
+            matchedPairs: 0,
+            isLocked: false,
+
+            startLevel: function(level) {
+                this.matchedPairs = 0;
+                this.flippedIndices = [];
+                this.isLocked = false;
+                
+                // Tentukan jumlah pasangan berdasarkan level (Maks 6 pasang)
+                let numPairs = 2; // Level 1 = 4 kartu
+                if (level == 2) numPairs = 3; // 6 kartu
+                if (level >= 3) numPairs = 4; // 8 kartu
+                if (level >= 5) numPairs = 6; // 12 kartu (Max)
+
+                // Persiapkan data kartu
+                let selectedEmojis = this.emojis.slice(0, numPairs);
+                let deck = [...selectedEmojis, ...selectedEmojis];
+                deck.sort(() => Math.random() - 0.5); // Acak kartu
+
+                this.cards = deck.map((emoji, index) => ({ id: index, emoji: emoji, isFlipped: false, isMatched: false }));
+                this.renderCards(numPairs * 2);
+            },
+
+            renderCards: function(totalCards) {
+                const grid = document.getElementById('memory-grid');
+                grid.innerHTML = '';
+                
+                // Atur kolom CSS dinamis
+                grid.className = `grid gap-3 w-full max-w-lg mx-auto h-[50vh] md:h-auto`;
+                if(totalCards <= 4) grid.classList.add('grid-cols-2', 'grid-rows-2');
+                else if(totalCards <= 6) grid.classList.add('grid-cols-3', 'grid-rows-2');
+                else if(totalCards <= 8) grid.classList.add('grid-cols-4', 'grid-rows-2');
+                else grid.classList.add('grid-cols-4', 'grid-rows-3');
+
+                this.cards.forEach((card, index) => {
+                    const cardEl = document.createElement('div');
+                    cardEl.className = 'memory-card w-full h-full min-h-[100px]';
+                    cardEl.onclick = () => this.flipCard(index, cardEl);
+                    cardEl.innerHTML = `
+                        <div class="memory-card-inner">
+                            <div class="memory-card-front text-pink-100">🌸</div>
+                            <div class="memory-card-back">${card.emoji}</div>
+                        </div>
+                    `;
+                    grid.appendChild(cardEl);
+                });
+            },
+
+            flipCard: function(index, element) {
+                if(this.isLocked || this.cards[index].isFlipped || this.cards[index].isMatched) return;
+
+                AudioSys.playTone(600, 'sine', 0.1); // Suara klik
+                element.classList.add('flipped');
+                this.cards[index].isFlipped = true;
+                this.flippedIndices.push({index, element});
+
+                if(this.flippedIndices.length === 2) {
+                    this.checkMatch();
+                }
+            },
+
+            checkMatch: function() {
+                this.isLocked = true;
+                const [card1, card2] = this.flippedIndices;
+                
+                if(this.cards[card1.index].emoji === this.cards[card2.index].emoji) {
+                    // Cocok!
+                    AudioSys.playTone(800, 'triangle', 0.2);
+                    this.cards[card1.index].isMatched = true;
+                    this.cards[card2.index].isMatched = true;
+                    this.matchedPairs++;
+                    this.flippedIndices = [];
+                    this.isLocked = false;
+                    
+                    if(this.matchedPairs === this.cards.length / 2) {
+                        setTimeout(() => app.levelComplete(), 500);
+                    }
+                } else {
+                    // Tidak Cocok
+                    setTimeout(() => {
+                        card1.element.classList.remove('flipped');
+                        card2.element.classList.remove('flipped');
+                        this.cards[card1.index].isFlipped = false;
+                        this.cards[card2.index].isFlipped = false;
+                        this.flippedIndices = [];
+                        this.isLocked = false;
+                    }, 1000); // Tahan 1 detik agar anak bisa melihat
+                }
+            }
+        };
+
+
+        // --- GAME 2: SAKURA CHIMES (Simon Says) ---
+        const simonGame = {
+            sequence: [],
+            playerStep: 0,
+            isShowingSequence: false,
+            // Nada Pentatonik: C5, D5, E5, G5
+            tones: [523.25, 587.33, 659.25, 783.99],
+            
+            startLevel: function(level) {
+                this.sequence = [];
+                let length = level === 1 ? 2 : (level === 2 ? 3 : (level < 5 ? 4 : 5));
+                for(let i=0; i<length; i++) {
+                    this.sequence.push(Math.floor(Math.random() * 4));
+                }
+                setTimeout(() => this.playSequence(), 800);
+            },
+
+            playSequence: function() {
+                this.isShowingSequence = true;
+                this.playerStep = 0;
+                let step = 0;
+                
+                document.getElementById('simon-center').innerText = '🎵';
+                document.getElementById('simon-center').classList.add('pulse-glow');
+
+                const interval = setInterval(() => {
+                    if(step >= this.sequence.length) {
+                        clearInterval(interval);
+                        this.isShowingSequence = false;
+                        document.getElementById('simon-center').innerText = '👉';
+                        document.getElementById('simon-center').classList.remove('pulse-glow');
+                        return;
+                    }
+                    this.activateButton(this.sequence[step]);
+                    step++;
+                }, 1000); // Tempo lambat agar ramah anak
+            },
+
+            activateButton: function(btnIndex) {
+                const btn = document.getElementById(`simon-btn-${btnIndex}`);
+                AudioSys.playTone(this.tones[btnIndex], 'triangle', 0.4);
+                
+                // Efek visual menyala
+                btn.classList.remove('opacity-90');
+                btn.classList.add('scale-110', 'brightness-125', 'shadow-[0_0_30px_rgba(255,255,255,0.8)]');
+                
+                setTimeout(() => {
+                    btn.classList.add('opacity-90');
+                    btn.classList.remove('scale-110', 'brightness-125', 'shadow-[0_0_30px_rgba(255,255,255,0.8)]');
+                }, 500);
+            },
+
+            handleInput: function(btnIndex) {
+                if(this.isShowingSequence) return; // Jangan izinkan klik saat sedang memutar
+                
+                this.activateButton(btnIndex);
+                
+                if(btnIndex === this.sequence[this.playerStep]) {
+                    // Benar
+                    this.playerStep++;
+                    if(this.playerStep === this.sequence.length) {
+                        this.isShowingSequence = true; // Kunci input
+                        document.getElementById('simon-center').innerText = '🌸';
+                        setTimeout(() => app.levelComplete(), 800);
+                    }
+                } else {
+                    // Salah - Mainkan error dan ulang sequence (Tanpa Game Over)
+                    this.isShowingSequence = true;
+                    document.getElementById('simon-center').innerText = '❌';
+                    document.getElementById(`simon-btn-${btnIndex}`).classList.add('shake');
+                    AudioSys.playError();
+                    
+                    setTimeout(() => {
+                        document.getElementById(`simon-btn-${btnIndex}`).classList.remove('shake');
+                        this.playSequence();
+                    }, 1500);
+                }
+            }
+        };
+
+
+        // --- GAME 3: HIDE & SEEK FESTIVAL ---
+        const hideGame = {
+            pool: ['🦊', '🐻', '🐰', '🐱', '🐼', '🐸', '🐯', '🐷'],
+            stageAnimals: [],
+            missingAnimal: null,
+            options: [],
+
+            startLevel: function(level) {
+                // Tentukan jumlah hewan
+                let numAnimals = 3;
+                if(level > 2) numAnimals = 4;
+                if(level > 5) numAnimals = 5;
+
+                // Acak dan pilih hewan untuk stage
+                let shuffledPool = [...this.pool].sort(() => 0.5 - Math.random());
+                this.stageAnimals = shuffledPool.slice(0, numAnimals);
+                
+                this.renderStage(this.stageAnimals);
+                
+                // UI States
+                document.getElementById('hide-instruction').innerText = "Ingat siapa saja yang ada di sini!";
+                const optionsDiv = document.getElementById('hide-options');
+                optionsDiv.classList.add('opacity-50', 'pointer-events-none');
+                optionsDiv.innerHTML = ''; // Bersihkan opsi
+                
+                // Waktu observasi berkurang seiring level (Maks 5 dtk, min 3 dtk)
+                let observeTime = Math.max(3000, 6000 - (level * 500));
+                
+                setTimeout(() => this.hidePhase(), observeTime);
+            },
+
+            renderStage: function(animals) {
+                const stage = document.getElementById('hide-stage');
+                stage.innerHTML = '';
+                animals.forEach(a => {
+                    const el = document.createElement('div');
+                    el.className = 'text-6xl md:text-7xl bounce-in transform origin-bottom hover:scale-110 transition-transform';
+                    el.innerText = a;
+                    stage.appendChild(el);
+                });
+            },
+
+            hidePhase: function() {
+                const curtain = document.getElementById('hide-curtain');
+                curtain.classList.remove('opacity-0');
+                curtain.classList.add('opacity-100');
+                AudioSys.playTone(400, 'sine', 1.5); // Suara hembusan angin simulasi
+
+                setTimeout(() => {
+                    // Pilih satu hewan untuk dihilangkan
+                    const missingIndex = Math.floor(Math.random() * this.stageAnimals.length);
+                    this.missingAnimal = this.stageAnimals[missingIndex];
+                    
+                    // Buat array baru tanpa hewan yang hilang
+                    let remainingAnimals = [...this.stageAnimals];
+                    remainingAnimals.splice(missingIndex, 1);
+                    
+                    this.renderStage(remainingAnimals);
+                    this.generateOptions();
+                    
+                    // Buka tirai
+                    curtain.classList.remove('opacity-100');
+                    curtain.classList.add('opacity-0');
+                    document.getElementById('hide-instruction').innerText = "Siapa yang bersembunyi?";
+                }, 1500); // Tirai tertutup selama 1.5 detik
+            },
+
+            generateOptions: function() {
+                // Buat opsi (1 benar, 2 salah)
+                let wrongOptions = this.pool.filter(a => !this.stageAnimals.includes(a));
+                wrongOptions = wrongOptions.sort(() => 0.5 - Math.random()).slice(0, 2);
+                
+                this.options = [this.missingAnimal, ...wrongOptions].sort(() => 0.5 - Math.random());
+                
+                const optionsDiv = document.getElementById('hide-options');
+                optionsDiv.innerHTML = '';
+                
+                this.options.forEach(opt => {
+                    const btn = document.createElement('button');
+                    btn.className = 'bg-white border-4 border-pink-200 rounded-2xl w-20 h-24 md:w-24 md:h-28 text-5xl flex items-center justify-center shadow-lg btn-game hover:bg-pink-50';
+                    btn.innerText = opt;
+                    btn.onclick = () => this.checkAnswer(opt, btn);
+                    optionsDiv.appendChild(btn);
+                });
+
+                // Aktifkan area klik
+                optionsDiv.classList.remove('opacity-50', 'pointer-events-none');
+            },
+
+            checkAnswer: function(selected, btnElement) {
+                const optionsDiv = document.getElementById('hide-options');
+                optionsDiv.classList.add('opacity-50', 'pointer-events-none'); // Kunci klik
+
+                if(selected === this.missingAnimal) {
+                    // Benar
+                    btnElement.classList.add('bg-green-200', 'border-green-400');
+                    // Munculkan kembali hewannya di panggung
+                    const stage = document.getElementById('hide-stage');
+                    const el = document.createElement('div');
+                    el.className = 'text-6xl md:text-7xl bounce-in transform origin-bottom';
+                    el.innerText = this.missingAnimal;
+                    stage.appendChild(el);
+
+                    setTimeout(() => app.levelComplete(), 1000);
+                } else {
+                    // Salah
+                    btnElement.classList.add('bg-red-200', 'border-red-400', 'shake');
+                    AudioSys.playError();
+                    document.getElementById('hide-instruction').innerText = "Coba ingat-ingat lagi!";
+                    
+                    setTimeout(() => {
+                        btnElement.classList.remove('bg-red-200', 'border-red-400', 'shake');
+                        optionsDiv.classList.remove('opacity-50', 'pointer-events-none'); // Buka klik lagi
+                    }, 1000);
+                }
+            }
+        };
+
+        // Inisialisasi Audio saat halaman diklik pertama kali untuk mengatasi policy browser
+        document.body.addEventListener('click', () => {
+            AudioSys.init();
+        }, { once: true });
+
+        // Fungsi Toast Notification
+        window.showToast = function(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        };
+
+        // Fallback sebelum module dimuat
+        window.saveGame = function() {
+            window.showToast("Sistem penyimpanan sedang memuat...");
+        };
+
+        // Ekspor ke global untuk diakses module Firebase
+        window.app = app;
+
+    </script>
+
+    <!-- MODULE FIREBASE UNTUK PENYIMPANAN CLOUD -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfigText = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        let firebaseConfig = {};
+        try { firebaseConfig = JSON.parse(firebaseConfigText); } catch(e) {}
+        
+        let appInstance = null;
+        let auth = null;
+        let db = null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        let currentUser = null;
+
+        // Inisialisasi Firebase jika tersedia di environment
+        if (Object.keys(firebaseConfig).length > 0) {
+            appInstance = initializeApp(firebaseConfig);
+            auth = getAuth(appInstance);
+            db = getFirestore(appInstance);
+
+            const initAuth = async () => {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    try {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } catch(e) {
+                        await signInAnonymously(auth);
+                    }
+                } else {
+                    await signInAnonymously(auth);
+                }
+            };
+            initAuth();
+
+            // Dengarkan status Auth dan Muat Skor
+            onAuthStateChanged(auth, async (user) => {
+                currentUser = user;
+                if (user) {
+                    try {
+                        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'gamedata', 'highscore');
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists() && docSnap.data().highscores) {
+                            // Muat objek highscore masing-masing game
+                            window.app.highScores = docSnap.data().highscores;
+                            window.app.updateAllHighscoreDisplays();
+                        }
+                    } catch (e) {
+                        console.error("Gagal memuat skor dari Cloud:", e);
+                    }
+                }
+            });
+        }
+
+        // Override fungsi save untuk Cloud
+        window.saveGame = async function() {
+            if (!currentUser || !db) {
+                window.showToast("Menyimpan ke memori sesi sementara...");
+                return;
+            }
+            try {
+                window.showToast("Menyimpan skor ke Cloud... ⏳");
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'gamedata', 'highscore');
+                // Simpan objek highscore keseluruhan
+                await setDoc(docRef, { highscores: window.app.highScores });
+                window.showToast("Semua skor tertinggi berhasil disimpan! 🌸");
+            } catch (e) {
+                console.error("Error saving: ", e);
+                window.showToast("Gagal menyimpan data.");
+            }
+        };
+    </script>
+</body>
+</html>
